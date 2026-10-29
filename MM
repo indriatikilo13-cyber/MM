@@ -1,0 +1,153 @@
+/**
+ * Kode Backend Google Apps Script (GAS)
+ * Digunakan untuk menangani penyimpanan otomatis database MPI ke Google Sheets.
+ */
+
+function doPost(e) {
+  try {
+    var data = JSON.parse(e.postData.contents);
+    var action = data.action;
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    
+    // Pastikan kedua sheet otomatis dibuat jika belum ada
+    var sheetSoal = setupSheetDataSoal(ss, data.gameData, data.quizData);
+    var sheetHasil = setupSheetHasil(ss);
+    
+    if (action === 'save_result') {
+      // Simpan data analisis jawaban siswa ke Sheet "Hasil"
+      var timestamp = new Date();
+      var formattedDate = Utilities.formatDate(timestamp, "Asia/Makassar", "yyyy-MM-dd HH:mm:ss");
+      
+      var row = [
+        formattedDate,
+        data.studentName,
+        data.studentClass,
+        data.correctCount,
+        data.wrongCount
+      ];
+      
+      // Detail inputan jawaban siswa untuk Soal 1 sampai Soal 10
+      if (data.answers && data.answers.length > 0) {
+        for (var i = 0; i < 10; i++) {
+          var ans = data.answers[i];
+          if (ans) {
+            var statusStr = ans.isCorrect ? "[BENAR]" : "[SALAH]";
+            row.push(statusStr + " Jawaban Siswa: " + ans.userChoice + " (Kunci: " + ans.correctChoice + ")");
+          } else {
+            row.push("-");
+          }
+        }
+      }
+      
+      sheetHasil.appendRow(row);
+      
+      return ContentService.createTextOutput(JSON.stringify({
+        "status": "success",
+        "message": "Data berhasil disimpan!"
+      })).setMimeType(ContentService.MimeType.JSON);
+    }
+    
+    return ContentService.createTextOutput(JSON.stringify({
+      "status": "success",
+      "message": "Inisialisasi sheet berhasil."
+    })).setMimeType(ContentService.MimeType.JSON);
+
+  } catch (error) {
+    return ContentService.createTextOutput(JSON.stringify({
+      "status": "error",
+      "message": error.toString()
+    })).setMimeType(ContentService.MimeType.JSON);
+  }
+}
+
+/**
+ * Membuat Sheet "Data Soal" jika belum ada dan mengisinya dengan daftar soal & pilihan jawaban
+ */
+function setupSheetDataSoal(ss, gameData, quizData) {
+  var sheet = ss.getSheetByName("Data Soal");
+  if (!sheet) {
+    sheet = ss.insertSheet("Data Soal");
+    
+    // Header Kolom
+    var headers = [
+      "Kategori Menu",
+      "No Soal / Tantangan",
+      "Tipe / Level",
+      "Stimulus Soal",
+      "Pertanyaan / Perintah",
+      "Pilihan / Opsi Jawaban",
+      "Kunci / Jawaban Benar"
+    ];
+    
+    sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+    sheet.getRange(1, 1, 1, headers.length).setFontWeight("bold").setBackground("#dcfce7");
+    
+    var rowsToInsert = [];
+    
+    // Insert Data Soal Menu Bermain (jika dikirim dari frontend)
+    if (gameData && gameData.length > 0) {
+      gameData.forEach(function(g, idx) {
+        rowsToInsert.push([
+          "BERMAIN",
+          "Tantangan " + (idx + 1),
+          g.type || "Game",
+          g.stimulus || "",
+          g.question || "Tantangan Gamifikasi " + (idx + 1),
+          g.options ? g.options.join(" | ") : (g.items ? g.items.join(", ") : "-"),
+          g.targetNumber || (g.correct !== undefined ? g.options[g.correct] : (g.correctOrder ? g.correctOrder.join(", ") : "Cek Sistem"))
+        ]);
+      });
+    }
+    
+    // Insert Data Soal Menu Berlatih (jika dikirim dari frontend)
+    if (quizData && quizData.length > 0) {
+      quizData.forEach(function(q, idx) {
+        rowsToInsert.push([
+          "BERLATIH",
+          "Soal " + (idx + 1),
+          "Level " + q.level + " (" + q.weight + " Poin)",
+          q.stimulus || "",
+          q.question || "",
+          q.options ? q.options.join(" | ") : "-",
+          q.options && q.correct !== undefined ? q.options[q.correct] : "-"
+        ]);
+      });
+    }
+    
+    if (rowsToInsert.length > 0) {
+      sheet.getRange(2, 1, rowsToInsert.length, headers.length).setValues(rowsToInsert);
+    }
+  }
+  return sheet;
+}
+
+/**
+ * Membuat Sheet "Hasil" jika belum ada beserta Header Kolom analisis guru
+ */
+function setupSheetHasil(ss) {
+  var sheet = ss.getSheetByName("Hasil");
+  if (!sheet) {
+    sheet = ss.insertSheet("Hasil");
+    
+    var headers = [
+      "Waktu Pengerjaan (Timestamp)",
+      "Nama Siswa",
+      "Kelas",
+      "Jumlah Jawaban Benar",
+      "Jumlah Jawaban Salah"
+    ];
+    
+    // Tambahkan header detail per Soal 1 s.d. Soal 10
+    for (var i = 1; i <= 10; i++) {
+      headers.push("Detail Jawaban Soal " + i);
+    }
+    
+    sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+    sheet.getRange(1, 1, 1, headers.length).setFontWeight("bold").setBackground("#fef08a");
+  }
+  return sheet;
+}
+
+function doGet(e) {
+  return ContentService.createTextOutput("Backend Google Apps Script MPI Lambang Bilangan Aktif!");
+}
